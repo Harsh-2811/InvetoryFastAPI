@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-
+from pymongo import ASCENDING
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -22,9 +22,12 @@ async def lifespan(app):
 
     db = client(os.getenv("MONGODB_DB", "inventory"))
     await db.products.create_index(
-        [("sku", ASC)],
-        unqiue = True
+        [("sku", ASCENDING)], unique=True
     )
+    await db.orders.create_index([("product_id", ASCENDING)])
+    await db.orders.create_index([("status", ASCENDING)])
+    await db.orders.create_index([("customer_email", ASCENDING)])
+    await db.products.create_index([("is_active", ASCENDING)])
 
     await db.orders.create()
 
