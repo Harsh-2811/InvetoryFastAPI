@@ -1,8 +1,10 @@
+from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
 from pymongo import DESCENDING, ReturnDocument
 
 from pymongo.errors import DuplicateKeyError
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from app.database import db
 from app.schemas import OrderCreate, StatusUpdate
 from app.utils import serialize, to_object_id
@@ -27,7 +29,7 @@ async def create_order(payload: OrderCreate):
             "$inc": {
                 "stock_quantity": -payload.quantity
             }
-        }
+        },
         return_document = ReturnDocument.BEFORE
     )
 
@@ -76,9 +78,9 @@ async def create_order(payload: OrderCreate):
 
 @router.get("")
 async def list_orders(
-    status: str | None = None, 
-    product_id : str | None = None,
-    customer_email: str | None = None,
+    status: Optional[str] = None, 
+    product_id : Optional[str] = None,
+    customer_email: Optional[str] = None,
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
@@ -116,7 +118,7 @@ async def get_order(order_id: str):
     if not order:
         raise HTTPException(
             404,
-            details = "order not exists"
+            detail = "order not exists"
         )
     return serialize(order)
 
@@ -124,10 +126,10 @@ async def get_order(order_id: str):
 @router.patch("/{order_id}/status")
 async def update_order(order_id: str, payload: StatusUpdate):
     order_oid = to_object_id(order_id)
-    order = db.orders.find_one({"_id": order_oid})
+    order = await db.orders.find_one({"_id": order_oid})
 
     if not order:
-        raise HTTPException(400, "Order not found")
+        raise HTTPException(404, "Order not found")
     
     old_status = order["status"]
     new_status = payload.status
@@ -136,13 +138,13 @@ async def update_order(order_id: str, payload: StatusUpdate):
         return serialize(order)
     
     updated = await db.orders.find_one_and_update({
-        "_id", order_oid, "status": old_status
+        "_id": order_oid, "status": old_status
     }, {"$set": {"status": new_status}},
     return_document = ReturnDocument.AFTER,
     )
 
     if not updated:
-        raise HTTPException(500, "Something went wrong")
+        raise HTTPException(409, "Order was modified concurrently, retry")
 
     if new_status == "cancelled":
         await db.products.update_one(
@@ -150,16 +152,16 @@ async def update_order(order_id: str, payload: StatusUpdate):
             {"$inc": {"stock_quantity": order["quantity"]}}
         )
 
-    return serialize(order)
+    return serialize(updated)
 
 
 @router.delete("/{order_id}")
 async def delete_order(order_id: str):
-    order_id = to_object_id(order_id)
-    active_order = await db.orders.find_one(
+    order_oid = to_object_id(order_id)
+    order = await db.orders.find_one_and_delete(
         {
-            "order_id": order_oid,
-          "status": "pending"
+            "_id": order_oid,
+            "status": "pending"
         }
     )
     if order:
@@ -168,9 +170,11 @@ async def delete_order(order_id: str):
                 "_id": order["product_id"]
             },
             {
-                "$inc": {"stocu_quantity": order["quantity"]}
+                "$inc": {"stock_quantity": order["quantity"]}
             }
         )
         return {"message": "order deleted"}
-    
-    raise HTTPException(400, "Only pending orders can be deleted")
+
+    if not await db.orders.find_one({"_id": order_oid}):
+        raise HTTPException(404, "Order not found")
+    raise HTTPException(409, "Only pending orders can be deleted")

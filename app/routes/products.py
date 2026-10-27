@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
 from pymongo import DESCENDING, ReturnDocument
 
@@ -28,8 +29,8 @@ async def create_product(payload: ProductCreate):
 
 @router.get("")
 async def list_products(
-    is_active: bool | None = None, 
-    in_stock : bool | None = None,
+    is_active: Optional[bool] = None, 
+    in_stock : Optional[bool] = None,
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
