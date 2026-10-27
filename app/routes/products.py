@@ -19,7 +19,7 @@ async def create_product(payload: ProductCreate):
     try:
         result = await db.products.insert_one(data)
     except DuplicateKeyError:
-        raise HTTPException(409, details="Duplicate SKU")
+        raise HTTPException(409, detail="Duplicate SKU")
 
     product = await db.products.find_one(
         {"_id": result.inserted_id}
