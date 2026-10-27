@@ -6,21 +6,18 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 load_dotenv()
 
-client = None
-db = None
+uri = os.getenv("MONGODB_URL")
+if not uri:
+    raise RuntimeError("MONGODB_URL is required")
+
+client = AsyncIOMotorClient(uri)
+db = client[os.getenv("MONGODB_DB", "inventory")]
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global client, db
-    uri = os.getenv("MONGODB_URI")
-    if not uri:
-        raise RuntimeError("MONGODB URI is not required")
-    
-    client = AsyncIOMotorClient(uri)
     await client.admin.command("ping")
 
-    db = client(os.getenv("MONGODB_DB", "inventory"))
     await db.products.create_index(
         [("sku", ASCENDING)], unique=True
     )
@@ -29,8 +26,5 @@ async def lifespan(app):
     await db.orders.create_index([("customer_email", ASCENDING)])
     await db.products.create_index([("is_active", ASCENDING)])
 
-    await db.orders.create()
-
     yield
     client.close()
-    
